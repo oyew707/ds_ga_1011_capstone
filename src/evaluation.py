@@ -14,6 +14,8 @@ from typing import Tuple, List, Dict, Callable
 from torch.nn import functional as F
 from torch import Tensor, sum, abs, log as torch_log, quantile
 from src.logger import getlogger
+import matplotlib.pyplot as plt
+import os
 
 # Constants
 warnings.filterwarnings('ignore')
@@ -151,3 +153,37 @@ def calculate_activation_specificity(
         specificity_scores.append(mean_likelihood_ratio.item())
 
     return specificity_scores
+
+
+def plot_training_metrics(metrics: Dict[str, List[float]], run_path: str) -> None:
+    """
+    -------------------------------------------------------
+    Plots training metrics history
+    -------------------------------------------------------
+    Parameters:
+        metrics - Dictionary of training metrics history (Dict[str, List[float]])
+        run_path - Path to save the plot (str)
+    -------------------------------------------------------
+    """
+    # Create the run directory if it doesn't exist
+    os.makedirs(run_path, exist_ok=True)
+
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+
+    # Plot each metric
+    for metric_name, values in metrics.items():
+        epochs = range(1, len(values) + 1)
+        plt.plot(epochs, values, 'o-', linewidth=2, markersize=4, label=metric_name)
+
+    # Customize the plot
+    plt.title('Training Metrics', fontsize=14, pad=10)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Value', fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    # Save the plot
+    plot_path = os.path.join(run_path, 'training_metrics.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()

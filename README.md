@@ -10,10 +10,36 @@ We aim to understand how different model architectures and sizes influence the d
 
 ```bash
 pip install -r requirements.txt
+huggingface-cli login --token $HF_TOKEN --add-to-git-credential
 ```
+Note: 
+- You can create a Hugging Face token at [link](https://huggingface.co/docs/hub/security-tokens).
+- This requires access to a GPU with CUDA installed.
+
 ## Usage
 
-[TO DO]
+```
+usage: main.py [-h] [-em EXECUTION_MODE] [-rn RUN_NAME] [-lm LLM_MODEL] [-dm DATA_MODEL] [-bs BATCH_SIZE] [-lr LEARNING_RATE] [-me MAXIMUM_EPOCHS] [-op OUTPUT_PATH] [-rs RANDOM_SEED] [-ocs OVER_COMPLETE_SIZE]
+
+options:
+  -h, --help            show this help message and exit
+  -em EXECUTION_MODE, --execution-mode EXECUTION_MODE
+  -rn RUN_NAME, --run-name RUN_NAME
+  -lm LLM_MODEL, --llm-model LLM_MODEL
+  -dm DATA_MODEL, --data-model DATA_MODEL
+  -bs BATCH_SIZE, --batch-size BATCH_SIZE
+  -lr LEARNING_RATE, --learning-rate LEARNING_RATE
+  -me MAXIMUM_EPOCHS, --maximum-epochs MAXIMUM_EPOCHS
+  -op OUTPUT_PATH, --output-path OUTPUT_PATH
+  -rs RANDOM_SEED, --random-seed RANDOM_SEED
+  -ocs OVER_COMPLETE_SIZE, --over-complete-size OVER_COMPLETE_SIZE
+
+```
+
+Example:
+```bash
+python main.py --execution-mode train --run-name run1 -lm gpt2 -dm wikitext --maximum-epoch 10 -ocs 2
+```
 
 ## Contributors
 
