@@ -105,8 +105,7 @@ class MonosemanticityTrainer:
         with self.accelerator.accumulate(self.model):
             for batch in dataloader:
                 # Extract activations in the main process
-                texts = batch[0]
-                x = self.activation_extractor.extract_activations(texts)['activations']
+                x = self.activation_extractor.extract_activations(batch)['activations']
 
                 # Forward pass
                 x_hat, h = self.model(x)
@@ -145,8 +144,7 @@ class MonosemanticityTrainer:
         with torch.no_grad():
             for batch in dataloader:
                 # Extract activations in the main process
-                texts = batch[0]
-                x = self.activation_extractor.extract_activations(texts)['activations']
+                x = self.activation_extractor.extract_activations(batch)['activations']
 
                 # Forward pass
                 x_hat, h = self.model(x)

@@ -10,6 +10,7 @@ __updated__ = "10/28/24"
 
 # Imports
 import warnings
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Any
@@ -30,6 +31,7 @@ from src.logger import getlogger
 # Constants
 warnings.filterwarnings('ignore')
 log = getlogger(__name__, 'info')
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def get_device() -> str:
@@ -253,7 +255,7 @@ class GemmaActivationExtractor(BaseActivationExtractor):
         return self.model.model.norm
 
 
-class TextDataset:
+class TextDataset(torch.utils.data.Dataset):
     """
     -------------------------------------------------------
     Dataset class for managing text data
@@ -269,23 +271,40 @@ class TextDataset:
             tokenizer: PreTrainedTokenizerFast,
             config: DataConfig,
     ):
-        dataset = load_dataset(config.dataset_name, split=config.split)
+        self.dataset = load_dataset(config.dataset_name, split=config.split)
         self.text_column = config.text_column
+        self.config = config
+        self.tokenizer = tokenizer
 
-        # Pre-tokenize all texts
-        self.tokenized_data = tokenizer(
-            dataset[self.text_column],
-            max_length=config.max_length,
-            padding=True,
+    def __len__(self):
+        """
+        -------------------------------------------------------
+        Get the length of the dataset
+        -------------------------------------------------------
+        Returns:
+            length - Length of the dataset (int)
+        """
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        """
+        -------------------------------------------------------
+        Get an item from the dataset. get text and tokenize on the fly
+        -------------------------------------------------------
+        Parameters:
+            idx - Index of the item to get (int)
+        Returns:
+            item - Item at the specified index (dict)
+        """
+        text = self.dataset[self.text_column][idx]
+        tokenized = self.tokenizer(
+            text,
+            max_length=self.config.max_length,
+            padding='max_length',
             truncation=True,
             return_tensors="pt"
         )
-
-        # Convert BatchEncoding to TensorDataset
-        self.keys = list(self.tokenized_data.keys())
-        self.tensor_dataset = TensorDataset(
-            *[self.tokenized_data[key] for key in self.keys]
-        )
+        return {key: value.unsqueeze(0) for key, value in tokenized.items()}
 
     def get_dataloader(self, batch_size: int, shuffle: bool = True) -> DataLoader:
         """
@@ -299,9 +318,16 @@ class TextDataset:
             dataloader - DataLoader yielding batches of texts (DataLoader)
         -------------------------------------------------------
         """
+        def collate_fn(batch):
+            # Combine the dictionaries in the batch
+            return {
+                key: torch.stack([item[key] for item in batch])
+                for key in batch[0].keys()
+            }
         return DataLoader(
-            self.tensor_dataset,
+            self,
             batch_size=batch_size,
             num_workers=4,
+            collate_fn=collate_fn,
             shuffle=shuffle
         )
