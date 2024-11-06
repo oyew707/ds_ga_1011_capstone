@@ -191,6 +191,12 @@ class MonosemanticityTrainer:
             for k, v in train_metrics.items():
                 history[f'train_{k}'].append(v)
 
+            log.info(
+                f"\nEpoch {epoch + 1}/{self.train_config.num_epochs}"
+                f"Train - Loss: {train_metrics['loss']:.4f}, "
+                f"MSE: {train_metrics['mse_loss']:.4f}, "
+                f"L1: {train_metrics['l1_regularization']:.4f}"
+            )
             # Validation
             if val_dataloader is not None:
                 val_metrics = self.evaluate(val_dataloader)

@@ -49,17 +49,17 @@ def l1_regularization(h: Tensor, lambda_l1: float) -> Tensor:
     Parameters:
         h - Hidden layer activations of shape (batch_size, hidden_dim) (torch.Tensor)
     Returns:
-        l1_regularization - L1 regularization term (batch_size,) (torch.Tensor)
+        l1_regularization - L1 regularization term (torch.Tensor)
     -------------------------------------------------------
     """
     assert lambda_l1 > 0, "L1 regularization coefficient must be > 0"
-    reg = abs(h).sum(dim=1) * lambda_l1
-    log.debug(f'L1 Regularization: {reg[:5]}')
+    reg = abs(h).sum() * lambda_l1
+    log.debug(f'L1 Regularization: {reg}')
     return reg
 
 
 def loss_function(x: Tensor, x_hat: Tensor, h: Tensor, l1_coefficient: float) -> dict[
-    str, Callable[[Tensor, Tensor], Tensor] | Tensor]:
+    str, Tensor]:
     """
     -------------------------------------------------------
     Calculates combined loss: MSE reconstruction + L1 regularization
@@ -84,7 +84,7 @@ def loss_function(x: Tensor, x_hat: Tensor, h: Tensor, l1_coefficient: float) ->
     return {
             'loss': total_loss,
             'mse_loss': mse,
-            'l1_regularization': l1
+            'l1_regularization': l1.unsqueeze(0)
         }
 
 

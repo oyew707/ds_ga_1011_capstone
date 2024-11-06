@@ -165,15 +165,25 @@ def main():
         use_flash_attention=False
     )
     extractor = extractor_map[args.llm_model](data_config)
-    dataset = TextDataset(
-        dataset_name=data_name_map[args.data_model],
-        split="train" if args.execution_mode == "train" else "test",
-        text_column="text"
-    )
-    dataloader = dataset.get_dataloader(batch_size=args.batch_size)
+    if args.execution_mode == "train":
+        dataset = TextDataset(
+            dataset_name=data_name_map[args.data_model],
+            split="train[:90%]",
+            text_column="text"
+        )
+        dataloader = dataset.get_dataloader(batch_size=args.batch_size)
+        validation_dataset = TextDataset(
+            dataset_name=data_name_map[args.data_model],
+            split="train[90%:]",
+            text_column="text"
+        )
+        validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
+    else:
+        log.error('Evaluation mode not supported yet')
+        raise NotImplementedError
 
     # Define autoencoder configuration and model
-    activation_dim = extractor._get_final_layer().out_features
+    activation_dim = extractor._get_final_layer().normalized_shape[0]
     log.info(f'Activation dimension: {activation_dim}')
     model_config = AutoencoderConfig(
         input_dim=activation_dim,
@@ -195,12 +205,12 @@ def main():
         trainer = MonosemanticityTrainer(model, optimizer=optimizer, extractor=extractor, train_config=trainer_config)
 
         # Train the model
-        results = trainer.train(dataloader)
+        results = trainer.train(dataloader, validation_dataloader)
         plot_training_metrics(results, args.run_path)
     else:
         # Evaluate the model
         log.info('Evaluating the model')
-        log.debug('Evaluation mode not supported yet')
+        log.error('Evaluation mode not supported yet')
         pass
 
 
