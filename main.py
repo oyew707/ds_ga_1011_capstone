@@ -15,7 +15,7 @@ import random
 
 import numpy as np
 import torch
-
+from copy import deepcopy
 from src.dataset import (
     TextDataset,
     DataConfig,
@@ -161,22 +161,22 @@ def main():
     # Define data configuration and dataset
     data_config = DataConfig(
         batch_size=args.batch_size,
+        dataset_name=data_name_map[args.data_model],
         model_name=model_name_map[args.llm_model],
+        text_column="text",
         use_flash_attention=False
     )
     extractor = extractor_map[args.llm_model](data_config)
     if args.execution_mode == "train":
-        dataset = TextDataset(
-            dataset_name=data_name_map[args.data_model],
-            split="train[:90%]",
-            text_column="text"
-        )
+        # training data
+        train_config = deepcopy(data_config)
+        train_config.split = "train[:90%]"
+        dataset = TextDataset(extractor.tokenizer, train_config)
         dataloader = dataset.get_dataloader(batch_size=args.batch_size)
-        validation_dataset = TextDataset(
-            dataset_name=data_name_map[args.data_model],
-            split="train[90%:]",
-            text_column="text"
-        )
+        # validation data
+        validation_config = deepcopy(data_config)
+        validation_config.split = "train[90%:]"
+        validation_dataset = TextDataset(extractor.tokenizer, validation_config)
         validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
     else:
         log.error('Evaluation mode not supported yet')

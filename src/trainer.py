@@ -139,7 +139,7 @@ class MonosemanticityTrainer:
         -------------------------------------------------------
         """
         self.model.eval()
-        total_metrics = defaultdict(float)
+        total_metrics = defaultdict(list)
         num_batches = len(dataloader)
 
         with torch.no_grad():
@@ -153,9 +153,9 @@ class MonosemanticityTrainer:
                 losses = evaluation.loss_function(x, x_hat, h, self.train_config.learning_rate)
 
                 for k, v in losses.items():
-                    total_metrics[k] += v.item()
+                    total_metrics[k].append(v)
 
-        eval_metrics = {k: v / num_batches for k, v in total_metrics.items()}
+        eval_metrics = {k: torch.cat(v).mean().item() for k, v in total_metrics.items()}
         return eval_metrics
 
     def train(

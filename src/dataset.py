@@ -9,20 +9,22 @@ __updated__ = "10/28/24"
 """
 
 # Imports
+import warnings
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Any
 import torch
 import torch.nn.functional as F
 from datasets import load_dataset
-from typing import Dict, Iterator, List, Optional, Any
-from dataclasses import dataclass
-from torch.utils.data import DataLoader
+from peft import prepare_model_for_kbit_training
+from torch.utils.data import DataLoader, TensorDataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    BitsAndBytesConfig
+    BitsAndBytesConfig,
+    BatchEncoding,
 )
-from peft import prepare_model_for_kbit_training
-from abc import ABC, abstractmethod
-import warnings
+from transformers.models.auto.tokenization_auto import PreTrainedTokenizerFast
 from src.logger import getlogger
 
 # Constants
@@ -46,20 +48,26 @@ class DataConfig:
     Configuration for LLM loading and activation extraction
     -------------------------------------------------------
     Parameters:
+        dataset_name - HuggingFace dataset identifier (str)
         model_name - HuggingFace model identifier (str)
         max_length - Maximum sequence length (int)
         batch_size - Batch size for processing (int)
         device - Device to load model on (str)
         load_in_4bit - Whether to use 4-bit quantization (bool)
         use_flash_attention - Whether to use flash attention (bool)
+        split - Dataset split to use (str)
+        text_column - Column containing text data (str)
     -------------------------------------------------------
     """
+    dataset_name: str
     model_name: str
     max_length: int = 1024
     batch_size: int = 32
     device: str = get_device()
     load_in_4bit: bool = True
     use_flash_attention: bool = True
+    split: str = "train"
+    text_column: str = "text"
 
 
 class BaseActivationExtractor(ABC, torch.nn.Module):
@@ -150,13 +158,14 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         """
         return self.tokenizer.batch_decode(tokens)
 
-    def extract_activations(self, texts: List[str], top_k: int = 10) -> dict[str, Any]:
+    def extract_activations(self, inputs: BatchEncoding, top_k: int = 10) -> dict[str, Any]:
         """
         -------------------------------------------------------
         Extract activations from a batch of texts
         -------------------------------------------------------
         Parameters:
-            texts - List of input texts (List[str])
+            inputs - Batch encoding of tokenized input texts (BatchEncoding)
+            top_k - Number of top tokens to extract (int)
         Returns:
             results
                 activations - Extracted and ReLU'd activations (torch.Tensor)
@@ -165,13 +174,6 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
                 logits - Logits from the model (torch.Tensor)
         -------------------------------------------------------
         """
-        inputs = self.tokenizer(
-            texts,
-            max_length=self.config.max_length,
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        )
 
         with torch.no_grad():
             # Get both hidden states (via hook) and logits
@@ -181,7 +183,7 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
             # Get top k tokens and their probabilities
             probs = F.softmax(logits, dim=-1)
             top_probs, top_tokens = torch.topk(probs, k=top_k, dim=-1)
-        log.debug(f"Extracted activations for {len(texts)} with {self.activations.shape}")
+        log.debug(f"Extracted activations with {self.activations.shape}")
         return {
             'activations': self.activations,
             'top_token_probs': top_probs,
@@ -257,20 +259,33 @@ class TextDataset:
     Dataset class for managing text data
     -------------------------------------------------------
     Parameters:
-        dataset_name - HuggingFace dataset identifier (str)
-        split - Dataset split to use (str)
-        text_column - Column containing text data (str)
+        tokenizer - Tokenizer for the dataset (PreTrainedTokenizerFast)
+        config - Configuration for dataset loading (DataConfig)
     -------------------------------------------------------
     """
 
     def __init__(
             self,
-            dataset_name: str,
-            split: str = "train",
-            text_column: str = "text"
+            tokenizer: PreTrainedTokenizerFast,
+            config: DataConfig,
     ):
-        self.dataset = load_dataset(dataset_name, split=split)
-        self.text_column = text_column
+        dataset = load_dataset(config.dataset_name, split=config.split)
+        self.text_column = config.text_column
+
+        # Pre-tokenize all texts
+        self.tokenized_data = tokenizer(
+            dataset[self.text_column],
+            max_length=config.max_length,
+            padding=True,
+            truncation=True,
+            return_tensors="pt"
+        )
+
+        # Convert BatchEncoding to TensorDataset
+        self.keys = list(self.tokenized_data.keys())
+        self.tensor_dataset = TensorDataset(
+            *[self.tokenized_data[key] for key in self.keys]
+        )
 
     def get_dataloader(self, batch_size: int, shuffle: bool = True) -> DataLoader:
         """
@@ -284,14 +299,9 @@ class TextDataset:
             dataloader - DataLoader yielding batches of texts (DataLoader)
         -------------------------------------------------------
         """
-        def collate_fn(batch):
-            texts = [item[self.text_column] for item in batch]
-            return texts
-
         return DataLoader(
-            self.dataset,
+            self.tensor_dataset,
             batch_size=batch_size,
             num_workers=4,
-            collate_fn=collate_fn,
             shuffle=shuffle
         )

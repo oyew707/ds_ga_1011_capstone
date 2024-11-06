@@ -38,7 +38,7 @@ options:
 
 Example:
 ```bash
-python main.py --execution-mode train --run-name run1 -lm gpt2 -dm wikitext --maximum-epoch 10 -ocs 2
+python main.py --execution-mode train --run-name run1 -lm gpt -dm wikitext --maximum-epoch 100 -ocs 5
 ```
 
 ## Contributors
