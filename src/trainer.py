@@ -105,7 +105,9 @@ class MonosemanticityTrainer:
         with self.accelerator.accumulate(self.model):
             for batch in dataloader:
                 # Extract activations in the main process
-                x = self.activation_extractor.extract_activations(batch)['activations']
+                texts = batch[0]
+                x = self.activation_extractor.extract_activations(texts)['activations']
+
 
                 # Forward pass
                 x_hat, h = self.model(x)
@@ -117,6 +119,7 @@ class MonosemanticityTrainer:
 
                 # Backward pass
                 self.accelerator.backward(losses['loss'].mean())
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
                 self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -142,9 +145,10 @@ class MonosemanticityTrainer:
         num_batches = len(dataloader)
 
         with torch.no_grad():
-            for batch in dataloader:
+            for idx, batch in enumerate(dataloader):
                 # Extract activations in the main process
-                x = self.activation_extractor.extract_activations(batch)['activations']
+                texts = batch[0]
+                x = self.activation_extractor.extract_activations(texts)['activations']
 
                 # Forward pass
                 x_hat, h = self.model(x)
@@ -152,6 +156,13 @@ class MonosemanticityTrainer:
 
                 for k, v in losses.items():
                     total_metrics[k].append(v)
+
+                if idx % 10 == 0:
+                    log.debug(f"Input shape: {x.shape} Reconstructed shape: {x_hat.shape}")
+                    log.debug(f"Input range: [{x.min().item():.3f}, {x.max().item():.3f}] "
+                              f"Reconstructed range: [{x_hat.min().item():.3f}, {x_hat.max().item():.3f}]")
+                    log.debug(f"Input mean/std: {x.mean().item():.3f}/{x.std().item():.3f} "
+                              f"Reconstructed mean/std: {x_hat.mean().item():.3f}/{x_hat.std().item():.3f}")
 
         eval_metrics = {k: torch.cat(v).mean().item() for k, v in total_metrics.items()}
         return eval_metrics

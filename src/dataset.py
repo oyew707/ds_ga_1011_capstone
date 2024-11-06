@@ -160,13 +160,13 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         """
         return self.tokenizer.batch_decode(tokens)
 
-    def extract_activations(self, inputs: BatchEncoding, top_k: int = 10) -> dict[str, Any]:
+    def extract_activations(self, texts: List[str], top_k: int = 10) -> dict[str, Any]:
         """
         -------------------------------------------------------
         Extract activations from a batch of texts
         -------------------------------------------------------
         Parameters:
-            inputs - Batch encoding of tokenized input texts (BatchEncoding)
+            texts - batch list of input texts (List[str])
             top_k - Number of top tokens to extract (int)
         Returns:
             results
@@ -176,6 +176,14 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
                 logits - Logits from the model (torch.Tensor)
         -------------------------------------------------------
         """
+
+        inputs = self.tokenizer(
+            texts,
+            max_length=self.config.max_length,
+            padding='max_length',
+            truncation=True,
+            return_tensors="pt"
+        )
 
         with torch.no_grad():
             # Get both hidden states (via hook) and logits
@@ -276,35 +284,6 @@ class TextDataset(torch.utils.data.Dataset):
         self.config = config
         self.tokenizer = tokenizer
 
-    def __len__(self):
-        """
-        -------------------------------------------------------
-        Get the length of the dataset
-        -------------------------------------------------------
-        Returns:
-            length - Length of the dataset (int)
-        """
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        """
-        -------------------------------------------------------
-        Get an item from the dataset. get text and tokenize on the fly
-        -------------------------------------------------------
-        Parameters:
-            idx - Index of the item to get (int)
-        Returns:
-            item - Item at the specified index (dict)
-        """
-        text = self.dataset[self.text_column][idx]
-        tokenized = self.tokenizer(
-            text,
-            max_length=self.config.max_length,
-            padding='max_length',
-            truncation=True,
-            return_tensors="pt"
-        )
-        return {key: value.unsqueeze(0) for key, value in tokenized.items()}
 
     def get_dataloader(self, batch_size: int, shuffle: bool = True) -> DataLoader:
         """
@@ -318,16 +297,9 @@ class TextDataset(torch.utils.data.Dataset):
             dataloader - DataLoader yielding batches of texts (DataLoader)
         -------------------------------------------------------
         """
-        def collate_fn(batch):
-            # Combine the dictionaries in the batch
-            return {
-                key: torch.stack([item[key] for item in batch])
-                for key in batch[0].keys()
-            }
         return DataLoader(
-            self,
+            self.dataset[self.text_column],
             batch_size=batch_size,
             num_workers=4,
-            collate_fn=collate_fn,
             shuffle=shuffle
         )

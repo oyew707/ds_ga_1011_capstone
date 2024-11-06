@@ -32,7 +32,7 @@ class AutoencoderConfig:
     """
     input_dim: int
     hidden_dim: int  # Must be >= input_dim (overcomplete)
-    l1_coefficient: float = 0.1
+    l1_coefficient: float = 0.01
 
 class SparseAutoencoder(nn.Module):
     """
@@ -49,6 +49,12 @@ class SparseAutoencoder(nn.Module):
         self.encoder = nn.Linear(config.input_dim, config.hidden_dim)
         self.decoder = nn.Linear(config.hidden_dim, config.input_dim)
         self.config = config
+
+        # Glorot initialization
+        nn.init.xavier_uniform_(self.encoder.weight, gain=0.1)
+        nn.init.zeros_(self.encoder.bias)
+        nn.init.xavier_uniform_(self.decoder.weight, gain=0.1)
+        nn.init.zeros_(self.decoder.bias)
 
     def encode(self, x: Tensor) -> Tensor:
         """
