@@ -62,7 +62,7 @@ class DataConfig:
     use_flash_attention: bool = True
 
 
-class BaseActivationExtractor(ABC):
+class BaseActivationExtractor(ABC, torch.nn.Module):
     """
     -------------------------------------------------------
     Base class for extracting activations from LLMs
@@ -73,6 +73,7 @@ class BaseActivationExtractor(ABC):
     """
 
     def __init__(self, config: DataConfig):
+        super().__init__()
         self.config = config
 
         log.info(f"Using {config.model_name} extractor on {config.device}")
@@ -250,13 +251,12 @@ class GemmaActivationExtractor(BaseActivationExtractor):
         return self.model.model.norm
 
 
-class ActivationDataset:
+class TextDataset:
     """
     -------------------------------------------------------
-    Dataset class for managing text data and extracting activations
+    Dataset class for managing text data
     -------------------------------------------------------
     Parameters:
-        extractor - Activation extractor instance (BaseActivationExtractor)
         dataset_name - HuggingFace dataset identifier (str)
         split - Dataset split to use (str)
         text_column - Column containing text data (str)
@@ -265,36 +265,33 @@ class ActivationDataset:
 
     def __init__(
             self,
-            extractor: BaseActivationExtractor,
             dataset_name: str,
             split: str = "train",
             text_column: str = "text"
     ):
-        self.extractor = extractor
         self.dataset = load_dataset(dataset_name, split=split)
         self.text_column = text_column
 
-    def get_dataloader(self, batch_size: int) -> DataLoader:
+    def get_dataloader(self, batch_size: int, shuffle: bool = True) -> DataLoader:
         """
         -------------------------------------------------------
         Create DataLoader for extracting activations
         -------------------------------------------------------
         Parameters:
             batch_size - Batch size for processing (int)
+            shuffle - whether to shuffle the data (bool)
         Returns:
-            dataloader - DataLoader yielding activation batches (DataLoader)
+            dataloader - DataLoader yielding batches of texts (DataLoader)
         -------------------------------------------------------
         """
         def collate_fn(batch):
             texts = [item[self.text_column] for item in batch]
-            res = self.extractor.extract_activations(texts)
-            return res['activations']
+            return texts
 
         return DataLoader(
             self.dataset,
             batch_size=batch_size,
+            num_workers=4,
             collate_fn=collate_fn,
-            num_workers=0,
-            pin_memory=True,
-            pin_memory_device=self.extractor.config.device
+            shuffle=shuffle
         )

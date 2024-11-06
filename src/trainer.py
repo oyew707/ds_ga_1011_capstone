@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from accelerate import Accelerator
 from torch.utils.data import DataLoader
+from src.dataset import TextDataset, BaseActivationExtractor
 
 # Constants
 log = logger.getlogger(__name__, 'debug')
@@ -60,6 +61,7 @@ class MonosemanticityTrainer:
     Parameters:
         model - Sparse autoencoder model (SparseAutoencoder)
         optimizer - PyTorch optimizer (torch.optim.Optimizer)
+        extractor - Activation extractor for model (BaseActivationExtractor)
         train_config - Training configuration (TrainingConfig)
     -------------------------------------------------------
     """
@@ -68,6 +70,7 @@ class MonosemanticityTrainer:
             self,
             model: model.SparseAutoencoder,
             optimizer: torch.optim.Optimizer,
+            extractor: BaseActivationExtractor,
             train_config: TrainingConfig
     ):
         self.train_config = train_config
@@ -79,6 +82,7 @@ class MonosemanticityTrainer:
             mixed_precision=train_config.mixed_precision,
             cpu = get_device() != 'cuda'
         )
+        self.activation_extractor = extractor
 
         # Prepare model, optimizer for distributed training
         self.model, self.optimizer = self.accelerator.prepare(model, optimizer)
@@ -89,7 +93,7 @@ class MonosemanticityTrainer:
         Trains the model for one epoch
         -------------------------------------------------------
         Parameters:
-            dataloader - DataLoader containing training data (DataLoader)
+            dataloader - DataLoader containing training text data (DataLoader)
         Returns:
             epoch_metrics - Dictionary of averaged metrics for the epoch (Dict[str, float])
         -------------------------------------------------------
@@ -100,7 +104,10 @@ class MonosemanticityTrainer:
 
         with self.accelerator.accumulate(self.model):
             for batch in dataloader:
-                x = batch[0]
+                # Extract activations in the main process
+                texts = batch[0]
+                x = self.activation_extractor.extract_activations(texts)['activations']
+
                 # Forward pass
                 x_hat, h = self.model(x)
                 losses = evaluation.loss_function(x, x_hat, h, self.train_config.learning_rate)
@@ -137,7 +144,11 @@ class MonosemanticityTrainer:
 
         with torch.no_grad():
             for batch in dataloader:
-                x = batch[0]
+                # Extract activations in the main process
+                texts = batch[0]
+                x = self.activation_extractor.extract_activations(texts)['activations']
+
+                # Forward pass
                 x_hat, h = self.model(x)
                 losses = evaluation.loss_function(x, x_hat, h, self.train_config.learning_rate)
 

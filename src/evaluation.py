@@ -19,7 +19,7 @@ import os
 
 # Constants
 warnings.filterwarnings('ignore')
-log = getlogger(__name__, 'debug')
+log = getlogger(__name__, 'info')
 
 
 def mse_loss(x: Tensor, x_hat: Tensor) -> Tensor:

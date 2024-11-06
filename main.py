@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 from src.dataset import (
-    ActivationDataset,
+    TextDataset,
     DataConfig,
     GPT2ActivationExtractor,
     GemmaActivationExtractor,
@@ -165,8 +165,7 @@ def main():
         use_flash_attention=False
     )
     extractor = extractor_map[args.llm_model](data_config)
-    dataset = ActivationDataset(
-        extractor=extractor,
+    dataset = TextDataset(
         dataset_name=data_name_map[args.data_model],
         split="train" if args.execution_mode == "train" else "test",
         text_column="text"
@@ -193,7 +192,7 @@ def main():
             learning_rate=args.learning_rate
         )
         optimizer = torch.optim.Adam(model.parameters(), lr=trainer_config.learning_rate)
-        trainer = MonosemanticityTrainer(model, optimizer=optimizer, train_config=trainer_config)
+        trainer = MonosemanticityTrainer(model, optimizer=optimizer, extractor=extractor, train_config=trainer_config)
 
         # Train the model
         results = trainer.train(dataloader)
