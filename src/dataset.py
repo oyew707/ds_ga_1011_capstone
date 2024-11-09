@@ -125,6 +125,8 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         -------------------------------------------------------
         """
         self.activations = F.relu(layer_outputs)
+        
+        self.activations = self.activations / (self.activations.max() + 1e-3 ) # Add some error to max norm for numerical stability
 
     def _register_hooks(self):
         """
