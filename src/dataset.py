@@ -23,7 +23,6 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     BitsAndBytesConfig,
-    BatchEncoding,
 )
 from transformers.models.auto.tokenization_auto import PreTrainedTokenizerFast
 from src.logger import getlogger

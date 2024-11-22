@@ -9,12 +9,12 @@ __updated__ = "10/27/24"
 -------------------------------------------------------
 """
 
-
 # Imports
 from torch import nn, Tensor
 import torch.nn.functional as F
-from typing import Tuple, Dict
+from typing import Tuple
 from dataclasses import dataclass
+
 
 # Constants
 
@@ -32,6 +32,7 @@ class AutoencoderConfig:
     input_dim: int
     hidden_dim: int  # Must be >= input_dim (overcomplete)
 
+
 class SparseAutoencoder(nn.Module):
     """
     -------------------------------------------------------
@@ -40,6 +41,7 @@ class SparseAutoencoder(nn.Module):
     Parameters:
         config - Configuration object for the autoencoder (AutoencoderConfig)
     """
+
     def __init__(self, config: AutoencoderConfig):
         super().__init__()
         assert config.hidden_dim >= config.input_dim, "Hidden dim must be >= input_dim for overcompleteness"

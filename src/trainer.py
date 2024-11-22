@@ -82,12 +82,12 @@ class MonosemanticityTrainer:
             train_config: TrainingConfig
     ):
         # Input validation
-        assert config.l1_coefficient_end >= config.l1_coefficient_start, "Max L1 coefficient must be >= initial coefficient"
-        assert config.schedule_type in ['cosine', 'linear', 'exponential'], "Schedule type must be 'cosine' or 'linear'"
-        assert config.num_epochs > config.warmup_epochs > 0, "Warmup epochs must be > 0"
+        assert train_config.l1_coefficient_end >= train_config.l1_coefficient_start, "Max L1 coefficient must be >= initial coefficient"
+        assert train_config.schedule_type in ['cosine', 'linear', 'exponential'], "Schedule type must be 'cosine' or 'linear'"
+        assert train_config.num_epochs > train_config.warmup_epochs > 0, "Warmup epochs must be > 0"
 
         self.train_config = train_config
-        self.l1_coefficient = config.l1_coefficient_start
+        self.l1_coefficient = train_config.l1_coefficient_start
         self.run_path = os.path.join(os.getcwd(), train_config.run_path)
         if not os.path.isdir(self.run_path):
             os.makedirs(self.run_path)
@@ -127,7 +127,7 @@ class MonosemanticityTrainer:
             self.l1_coefficient = self.train_config.l1_coefficient_start * (self.train_config.l1_coefficient_end / self.train_config.l1_coefficient_start) ** progress
             log.debug(f'Exponential schedule; Update L1 coefficient: {self.l1_coefficient}')
         else:
-            raise NotImplementedError(f'Schedule type {self.train_config.schedule_type} not implemented
+            raise NotImplementedError(f'Schedule type {self.train_config.schedule_type} not implemented')
 
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:

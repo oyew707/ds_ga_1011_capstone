@@ -11,8 +11,7 @@ __updated__ = "11/21/24"
 
 # Imports
 import torch
-import numpy as np
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Set, Any
 from collections import defaultdict, Counter
 import pickle
 import os
@@ -53,7 +52,7 @@ class FeatureTracker:
         # Dictionary mapping words to Counter objects of features
         self.word_features = defaultdict(Counter)
 
-    def process_prompt(self, prompt: str) -> Dict[str, Set[str]]:
+    def process_prompt(self, prompt: str) -> Dict[Any, Set[str]]:
         """
         -------------------------------------------------------
         Extracts feature-word associations from model outputs
@@ -68,13 +67,13 @@ class FeatureTracker:
         with torch.no_grad():
             output_extraction = self.extractor.extract_activations([prompt])
             activations = output_extraction['activations']
-            words = output_extraction['words']
+            tokens = output_extraction['top_tokens']
 
             # Get feature activations through autoencoder
-            _, features = self.autoencoder(activations)
+            _, features = self.model(activations)
 
         # Convert tokens to words
-        words = self.activation_extractor.decode_tokens(tokens.squeeze())
+        words = self.extractor.decode_tokens(tokens.squeeze())
         log.debug(f"Generated Words: {words}")
 
         # Transpose features to shape (sequence_length, n_features)
@@ -162,7 +161,7 @@ class FeatureTracker:
         load_path = os.path.join(self.save_dir, filename)
         log.debug(f"Loading state from {load_path}")
         if not os.path.exists(load_path):
-            log.warn(f"File {load_path} does not exist")
+            log.warning(f"File {load_path} does not exist")
             return
 
         with open(load_path, 'rb') as f:
@@ -224,7 +223,7 @@ class FeatureTracker:
                 for word, feature_counter in sorted_words[:top_k]]
 
         if results:
-            log.debug(f"Top word activates {results[0][1]} unique features
+            log.debug(f"Top word activates {results[0][1]} unique features")
 
         return results
 
