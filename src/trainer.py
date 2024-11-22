@@ -44,6 +44,10 @@ class TrainingConfig:
         num_epochs - Number of training epochs (positive integer)
         mixed_precision - Mixed precision type ('no', 'fp16', 'bf16') (str)
         learning_rate - Learning rate for optimization (float > 0)
+        l1_coefficient_start - Initial Coefficient for L1 regularization on the hidden layer (float > 0)
+        l1_coefficient_end - Final Coefficient for L1 regularization on the hidden layer (float > l1_coefficient_start)
+        warmup_epochs - Number of epochs for L1 regularization warmup (positive integer)
+        schedule_type - Type of scheduling for L1 regularization ('cosine', 'linear') (str)
     -------------------------------------------------------
     """
     batch_size: int = 64
@@ -51,6 +55,10 @@ class TrainingConfig:
     learning_rate: float = 1e-3
     mixed_precision: str = 'fp16'
     run_path: str = 'runs/'
+    l1_coefficient_start: float = 0.01
+    l1_coefficient_end: float = 1
+    warmup_epochs: int = 5  # Number of epochs for warmup
+    schedule_type: str = 'cosine'  # Type of scheduling
 
 
 class MonosemanticityTrainer:
@@ -73,7 +81,13 @@ class MonosemanticityTrainer:
             extractor: BaseActivationExtractor,
             train_config: TrainingConfig
     ):
+        # Input validation
+        assert config.l1_coefficient_end >= config.l1_coefficient_start, "Max L1 coefficient must be >= initial coefficient"
+        assert config.schedule_type in ['cosine', 'linear', 'exponential'], "Schedule type must be 'cosine' or 'linear'"
+        assert config.num_epochs > config.warmup_epochs > 0, "Warmup epochs must be > 0"
+
         self.train_config = train_config
+        self.l1_coefficient = config.l1_coefficient_start
         self.run_path = os.path.join(os.getcwd(), train_config.run_path)
         if not os.path.isdir(self.run_path):
             os.makedirs(self.run_path)
@@ -86,6 +100,35 @@ class MonosemanticityTrainer:
 
         # Prepare model, optimizer for distributed training
         self.model, self.optimizer = self.accelerator.prepare(model, optimizer)
+
+    def _update_l1_coefficient(self, epoch: int) -> None:
+        """
+        -------------------------------------------------------
+        Updates the L1 regularization coefficient based on the schedule type
+        -------------------------------------------------------
+        Parameters:
+            epoch - Current epoch number (int)
+        """
+        if epoch >= self.train_config.warmup_epochs:
+            self.l1_coefficient = self.train_config.l1_coefficient_end
+            log.debug(f'Setting to the max; Warmup peroid is over, L1 coefficient: {self.l1_coefficient}')
+            return
+
+        progress = epoch / self.train_config.warmup_epochs
+        diff = self.train_config.l1_coefficient_end - self.train_config.l1_coefficient_start
+
+        if self.train_config.schedule_type == 'linear':
+            self.l1_coefficient = self.train_config.l1_coefficient_start + progress * (diff)
+            log.debug(f'Linear schedule; Update L1 coefficient: {self.l1_coefficient}')
+        elif self.train_config.schedule_type == 'cosine':
+            self.l1_coefficient = self.train_config.l1_coefficient_start + 0.5 * diff * (1 - torch.cos(progress * torch.pi))
+            log.debug(f'Cosine schedule; Update L1 coefficient: {self.l1_coefficient}')
+        elif self.train_config.schedule_type == 'exponential':
+            self.l1_coefficient = self.train_config.l1_coefficient_start * (self.train_config.l1_coefficient_end / self.train_config.l1_coefficient_start) ** progress
+            log.debug(f'Exponential schedule; Update L1 coefficient: {self.l1_coefficient}')
+        else:
+            raise NotImplementedError(f'Schedule type {self.train_config.schedule_type} not implemented
+
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
         """
@@ -111,7 +154,7 @@ class MonosemanticityTrainer:
 
                 # Forward pass
                 x_hat, h = self.model(x)
-                losses = evaluation.loss_function(x, x_hat, h, self.train_config.learning_rate)
+                losses = evaluation.loss_function(x, x_hat, h, self.l1_coefficient)
 
                 # Update metrics
                 for k, v in losses.items():
@@ -152,7 +195,7 @@ class MonosemanticityTrainer:
 
                 # Forward pass
                 x_hat, h = self.model(x)
-                losses = evaluation.loss_function(x, x_hat, h, self.train_config.learning_rate)
+                losses = evaluation.loss_function(x, x_hat, h, self.train_config.l1_coefficient_end)
 
                 for k, v in losses.items():
                     total_metrics[k].append(v)
@@ -218,6 +261,9 @@ class MonosemanticityTrainer:
                     f"MSE: {val_metrics['mse_loss']:.4f}, "
                     f"L1: {val_metrics['l1_regularization']:.4f}"
                 )
+
+            # Update L1 coefficient
+            self._update_l1_coefficient(epoch)
 
             # Save checkpoint
             val_loss = val_metrics['loss'] if val_dataloader is not None else train_metrics['loss']

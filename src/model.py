@@ -27,12 +27,10 @@ class AutoencoderConfig:
     Parameters:
         input_dim - Dimension of input features (positive integer)
         hidden_dim - Dimension of hidden layer, must be >= input_dim (positive integer)
-        l1_coefficient - Coefficient for L1 regularization on the hidden layer (float > 0)
     -------------------------------------------------------
     """
     input_dim: int
     hidden_dim: int  # Must be >= input_dim (overcomplete)
-    l1_coefficient: float = 0.01
 
 class SparseAutoencoder(nn.Module):
     """
