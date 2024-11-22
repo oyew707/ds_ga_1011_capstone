@@ -53,14 +53,13 @@ class FeatureTracker:
         # Dictionary mapping words to Counter objects of features
         self.word_features = defaultdict(Counter)
 
-    def process_prompt(self, prompt: str, update_cache: bool = True) -> Dict[str, Set[str]]:
+    def process_prompt(self, prompt: str) -> Dict[str, Set[str]]:
         """
         -------------------------------------------------------
         Extracts feature-word associations from model outputs
         -------------------------------------------------------
         Parameters:
             prompt - Input prompt for model inference (str)
-            update_cache: Whether to update the cached top words/features (bool)
         Returns:
             Dictionary mapping feature indices to sets of associated words (Dict[str, Set[str]])
         -------------------------------------------------------
@@ -162,7 +161,9 @@ class FeatureTracker:
         """
         load_path = os.path.join(self.save_dir, filename)
         log.debug(f"Loading state from {load_path}")
-        assert os.path.exists(load_path), f"File {load_path} does not exist"
+        if not os.path.exists(load_path):
+            log.warn(f"File {load_path} does not exist")
+            return
 
         with open(load_path, 'rb') as f:
             state = pickle.load(f)
@@ -276,3 +277,23 @@ class FeatureTracker:
         log.info(f"\nTop {top_k} most active features:")
         for feature_idx, count in feature_counter.most_common(top_k):
             log.info(f"  Feature {feature_idx}: {count} times")
+
+    def analyze(self, dataloader: torch.utils.data.DataLoader):
+        """
+        -------------------------------------------------------
+        Analyze feature-word associations in a dataset
+        -------------------------------------------------------
+        Parameters:
+            dataloader - DataLoader for the dataset to analyze
+        -------------------------------------------------------
+        """
+        log.info("Starting feature analysis on dataset")
+        with torch.no_grad():
+            for batch in tqdm(dataloader):
+                # Convert batch items to list of texts
+                texts = batch[0]
+
+                for prompt in texts:
+                    self.process_prompt(prompt)
+
+        log.info("Completed feature analysis on dataset")

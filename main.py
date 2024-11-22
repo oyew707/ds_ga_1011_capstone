@@ -26,6 +26,7 @@ from src.evaluation import plot_training_metrics
 from src.logger import getlogger
 from src.model import AutoencoderConfig, SparseAutoencoder
 from src.trainer import MonosemanticityTrainer, TrainingConfig
+from src.feature_analysis import FeatureTracker
 
 # Constants
 log = getlogger(__name__, 'info')
@@ -72,7 +73,7 @@ def validate_args(args):
 
     # Validate execution mode
     execution_mode = args.execution_mode
-    assert execution_mode in {'train', 'evaluate'}, "Execution mode must be 'train' or 'evaluate'"
+    assert execution_mode in {'train', 'evaluate', 'analyze'}, "Execution mode must be 'train' or 'evaluate'"
     assert execution_mode == 'train', "Only training mode is supported at this time"
 
     # Validate data model
@@ -84,6 +85,18 @@ def validate_args(args):
     assert 256 > overcomplete_size > 0 and isinstance(overcomplete_size,
                                                       int), "Overcomplete size must be a positive integer less than 256"
 
+    # Validate L1 coefficient
+    l1_coefficient_start = args.l1_coefficient_start
+    l1_coefficient_end = args.l1_coefficient_end
+    assert l1_coefficient_end >= l1_coefficient_start > 0, "L1 coefficient start must be a positive float and smaller than L1 coefficient end"
+
+    # Validate L1 coefficient scheduler
+    l1_coefficient_scheduler = args.l1_coefficient_scheduler
+    assert l1_coefficient_scheduler in {'linear', 'exponential', 'cosine'}, "L1 coefficient scheduler must be 'linear' or 'exponential' or 'cosine'"
+
+    # Validate warmup epochs
+    warmup_epochs = args.warmup_epochs
+    assert max_epochs >= warmup_epochs > 0 and isinstance(warmup_epochs, int), "Warmup epochs must be a positive integer"
 
 def parse_args() -> argparse.Namespace:
     """
@@ -128,6 +141,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '-ocs', '--over-complete-size',
         type=int, default=5)
+    parser.add_argument(
+        '-lcs', '--l1-coefficient-start',
+        type=float, default=1e-4)
+    parser.add_argument(
+        '-lce', '--l1-coefficient-end',
+        type=float, default=1)
+    parser.add_argument(
+        '-lcs', '--l1-coefficient-scheduler',
+        type=str, default='linear')
+    parser.add_argument(
+        '-we', '--warmup-epochs',
+        type=int, default=64)
 
     # Get parsed arguments
     args = parser.parse_args()
@@ -178,6 +203,12 @@ def main():
         validation_config.split = "train[90%:]"
         validation_dataset = TextDataset(extractor.tokenizer, validation_config)
         validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
+    elif args.execution_mode == "analyze":
+        # Configure test data
+        test_config = deepcopy(data_config)
+        test_config.split = "test[:10%]"  # Use smaller subset for analysis
+        test_dataset = TextDataset(extractor.tokenizer, test_config)
+        test_dataloader = test_dataset.get_dataloader(batch_size=args.batch_size)
     else:
         log.error('Evaluation mode not supported yet')
         raise NotImplementedError
@@ -199,7 +230,11 @@ def main():
             num_epochs=args.maximum_epochs,
             mixed_precision='fp16',
             run_path=args.run_path,
-            learning_rate=args.learning_rate
+            learning_rate=args.learning_rate,
+            l1_coefficient_start=args.l1_coefficient_start,
+            l1_coefficient_end=args.l1_coefficient_end,
+            l1_coefficient_scheduler=args.l1_coefficient_scheduler,
+            warmup_epochs=args.warmup_epochs
         )
         optimizer = torch.optim.Adam(model.parameters(), lr=trainer_config.learning_rate)
         trainer = MonosemanticityTrainer(model, optimizer=optimizer, extractor=extractor, train_config=trainer_config)
@@ -207,6 +242,36 @@ def main():
         # Train the model
         results = trainer.train(dataloader, validation_dataloader)
         plot_training_metrics(results, args.run_path)
+    elif args.execution_mode == "analyze":
+        log.info('Analyzing the model')
+        # load model
+        model.load_state_dict(torch.load(os.path.join(args.run_path, 'model.pkl')))
+        model.eval()
+
+        # Define feature tracker
+        tracker = FeatureTracker(model, extractor, args.run_path)
+
+        # Load state
+        tracker.load_state("feature_analysis.pkl")
+
+        tracker.analyze(dataloader)
+
+        # Get features that activate for many different words
+        interesting_features = tracker.get_interesting_features(top_k=10)
+        for feature_idx, word_count in interesting_features:
+            log.info(f"Feature {feature_idx} activates for {word_count} different words")
+            tracker.print_feature_analysis(feature_idx)
+            log.info('-'*25)
+
+        # Get specific words that activate few features
+        specific_words = tracker.get_specific_words(top_k=10)
+        for word, feature_count in specific_words:
+            log.info(f"Word '{word}' activates {feature_count} different features")
+            tracker.print_word_analysis(word)
+            log.info('-' * 25)
+
+        # Save state
+        tracker.save_state("feature_analysis.pkl")
     else:
         # Evaluate the model
         log.info('Evaluating the model')
