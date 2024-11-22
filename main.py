@@ -40,8 +40,13 @@ model_name_map = {
     'gemma': 'google/gemma-2-2b',
     'llama': 'meta-llama/Llama-3.2-1B'
 }
+data_path_map = {
+    'wikitext': 'Salesforce/wikitext',
+    'commoncrawl': 'allenai/c4',
+}
 data_name_map = {
-    'wikitext': 'RealTimeData/wikitext_latest',
+    'wikitext': 'wikitext-103-raw-v1',
+    'commoncrawl': 'en',
 }
 
 
@@ -66,26 +71,12 @@ def main():
     data_config = DataConfig(
         batch_size=args.batch_size,
         dataset_name=data_name_map[args.data_model],
+        dataset_config=data_path_map[args.data_model],
         model_name=model_name_map[args.llm_model],
         text_column="text",
         use_flash_attention=False
     )
     extractor = extractor_map[args.llm_model](data_config)
-    # training data
-    train_config = deepcopy(data_config)
-    train_config.split = "train[:90%]"
-    dataset = TextDataset(extractor.tokenizer, train_config)
-    dataloader = dataset.get_dataloader(batch_size=args.batch_size)
-    # validation data
-    validation_config = deepcopy(data_config)
-    validation_config.split = "train[90%:]"
-    validation_dataset = TextDataset(extractor.tokenizer, validation_config)
-    validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
-    # Configure test data
-    test_config = deepcopy(data_config)
-    test_config.split = "test[:10%]"  # Use smaller subset for analysis
-    test_dataset = TextDataset(extractor.tokenizer, test_config)
-    test_dataloader = test_dataset.get_dataloader(batch_size=args.batch_size)
 
     # Define autoencoder configuration and model
     activation_dim = extractor._get_final_layer().normalized_shape[0]
@@ -97,6 +88,16 @@ def main():
     model = SparseAutoencoder(model_config)
 
     if args.execution_mode == "train":
+        # training data
+        train_config = deepcopy(data_config)
+        train_config.split = "train[:90%]"
+        dataset = TextDataset(extractor.tokenizer, train_config)
+        dataloader = dataset.get_dataloader(batch_size=args.batch_size)
+        # validation data
+        validation_config = deepcopy(data_config)
+        validation_config.split = "train[90%:]"
+        validation_dataset = TextDataset(extractor.tokenizer, validation_config)
+        validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
         log.info('Training the model')
         # Define training configuration and optimizer
         trainer_config = TrainingConfig(
@@ -118,6 +119,12 @@ def main():
         plot_training_metrics(results, args.run_path)
 
     elif args.execution_mode == "analyze":
+        # Configure test data
+        test_config = deepcopy(data_config)
+        test_config.split = "validation"  # Use smaller subset for analysis
+        test_dataset = TextDataset(extractor.tokenizer, test_config)
+        test_dataloader = test_dataset.get_dataloader(batch_size=args.batch_size)
+
         log.info('Analyzing the model')
         # load model
         model.load_state_dict(torch.load(os.path.join(args.run_path, 'model.pkl')))

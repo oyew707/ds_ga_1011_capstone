@@ -50,6 +50,7 @@ class DataConfig:
     -------------------------------------------------------
     Parameters:
         dataset_name - HuggingFace dataset identifier (str)
+        dataset_config - HuggingFace dataset configuration (str)
         model_name - HuggingFace model identifier (str)
         max_length - Maximum sequence length (int)
         batch_size - Batch size for processing (int)
@@ -61,6 +62,7 @@ class DataConfig:
     -------------------------------------------------------
     """
     dataset_name: str
+    dataset_config: str
     model_name: str
     max_length: int = 1024
     batch_size: int = 32
@@ -284,11 +286,11 @@ class TextDataset(torch.utils.data.Dataset):
             tokenizer: PreTrainedTokenizerFast,
             config: DataConfig,
     ):
-        self.dataset = load_dataset(config.dataset_name, split=config.split)
+        # Load dataset (English only and stream for big datasets)
+        self.dataset = load_dataset(config.dataset_name, name=config.dataset_config, split=config.split, streaming=True)
         self.text_column = config.text_column
         self.config = config
         self.tokenizer = tokenizer
-
 
     def get_dataloader(self, batch_size: int, shuffle: bool = True) -> DataLoader:
         """
