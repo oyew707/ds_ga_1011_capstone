@@ -105,6 +105,7 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         # Register hook for activation extraction
         self.activations = None
         self._register_hooks()
+        self.batch_norm = None
 
     @abstractmethod
     def _load_model(self) -> torch.nn.Module:
@@ -125,8 +126,11 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         -------------------------------------------------------
         """
         self.activations = F.relu(layer_outputs)
-        
-        self.activations = self.activations / (self.activations.max() + 1e-3 ) # Add some error to max norm for numerical stability
+        if self.batch_norm is None:
+            self.batch_norm = torch.nn.BatchNorm1d(self.activations.size(1))
+
+        # Use batch norm instead
+        self.activations = self.batch_norm(self.activations)
 
     def _register_hooks(self):
         """
