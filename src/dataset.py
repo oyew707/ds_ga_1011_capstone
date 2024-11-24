@@ -23,6 +23,7 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     BitsAndBytesConfig,
+    BatchEncoding,
 )
 from transformers.models.auto.tokenization_auto import PreTrainedTokenizerFast
 from src.logger import getlogger
@@ -179,13 +180,13 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         """
         return self.tokenizer.batch_decode(tokens)
 
-    def extract_activations(self, texts: List[str], top_k: int = 10) -> dict[str, Any]:
+    def extract_activations(self, inputs: BatchEncoding, top_k: int = 10) -> dict[str, Any]:
         """
         -------------------------------------------------------
         Extract activations from a batch of texts
         -------------------------------------------------------
         Parameters:
-            texts - batch list of input texts (List[str])
+            inputs - Batch of tokenized inputs (BatchEncoding)
             top_k - Number of top tokens to extract (int)
         Returns:
             results
@@ -195,14 +196,6 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
                 logits - Logits from the model (torch.Tensor)
         -------------------------------------------------------
         """
-
-        inputs = self.tokenizer(
-            texts,
-            max_length=self.config.max_length,
-            padding='max_length',
-            truncation=True,
-            return_tensors="pt"
-        )
 
         with torch.no_grad():
             # Get both hidden states (via hook) and logits
@@ -315,6 +308,7 @@ class TextDataset(torch.utils.data.Dataset):
         ).select_columns([config.text_column])
         self.config = config
         self.tokenizer = tokenizer
+        self.text_column = config.text_column
 
     def get_dataloader(self, batch_size: int, shuffle: bool = True) -> DataLoader:
         """
@@ -328,8 +322,19 @@ class TextDataset(torch.utils.data.Dataset):
             dataloader - DataLoader yielding batches of texts (DataLoader)
         -------------------------------------------------------
         """
+        def collate_fn(batch):
+            inputs = self.tokenizer(
+                [dt[self.text_column] for dt in batch],
+                max_length=self.config.max_length,
+                padding='max_length',
+                truncation=True,
+                return_tensors="pt"
+            )
+            return inputs
+
         return DataLoader(
             self.dataset,
             batch_size=batch_size,
+            collate_fn=collate_fn,
             num_workers=4,
         )

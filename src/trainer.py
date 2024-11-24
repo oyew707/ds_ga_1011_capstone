@@ -13,6 +13,7 @@ from src import evaluation, logger, model
 from tqdm import tqdm
 import os
 import torch
+import math
 from typing import Tuple, Dict, Optional
 from dataclasses import dataclass
 from collections import defaultdict
@@ -32,6 +33,7 @@ def get_device() -> str:
         return "mps"
     else:
         return "cpu"
+
 
 @dataclass
 class TrainingConfig:
@@ -85,7 +87,8 @@ class MonosemanticityTrainer:
     ):
         # Input validation
         assert train_config.l1_coefficient_end >= train_config.l1_coefficient_start, "Max L1 coefficient must be >= initial coefficient"
-        assert train_config.schedule_type in ['cosine', 'linear', 'exponential'], "Schedule type must be 'cosine' or 'linear'"
+        assert train_config.schedule_type in ['cosine', 'linear',
+                                              'exponential'], "Schedule type must be 'cosine' or 'linear'"
         assert train_config.num_epochs > train_config.warmup_epochs > 0, "Warmup epochs must be > 0"
 
         self.train_config = train_config
@@ -96,7 +99,7 @@ class MonosemanticityTrainer:
 
         self.accelerator = Accelerator(
             mixed_precision=train_config.mixed_precision,
-            cpu = get_device() != 'cuda'
+            cpu=get_device() != 'cuda'
         )
         self.activation_extractor = extractor
 
@@ -120,17 +123,18 @@ class MonosemanticityTrainer:
         diff = self.train_config.l1_coefficient_end - self.train_config.l1_coefficient_start
 
         if self.train_config.schedule_type == 'linear':
-            self.l1_coefficient = self.train_config.l1_coefficient_start + progress * (diff)
+            self.l1_coefficient = self.train_config.l1_coefficient_start + progress * diff
             log.debug(f'Linear schedule; Update L1 coefficient: {self.l1_coefficient}')
         elif self.train_config.schedule_type == 'cosine':
-            self.l1_coefficient = self.train_config.l1_coefficient_start + 0.5 * diff * (1 - torch.cos(progress * torch.pi))
+            self.l1_coefficient = self.train_config.l1_coefficient_start + 0.5 * diff * (
+                        1 - math.cos(progress * math.pi))
             log.debug(f'Cosine schedule; Update L1 coefficient: {self.l1_coefficient}')
         elif self.train_config.schedule_type == 'exponential':
-            self.l1_coefficient = self.train_config.l1_coefficient_start * (self.train_config.l1_coefficient_end / self.train_config.l1_coefficient_start) ** progress
+            self.l1_coefficient = self.train_config.l1_coefficient_start * (
+                        self.train_config.l1_coefficient_end / self.train_config.l1_coefficient_start) ** progress
             log.debug(f'Exponential schedule; Update L1 coefficient: {self.l1_coefficient}')
         else:
             raise NotImplementedError(f'Schedule type {self.train_config.schedule_type} not implemented')
-
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
         """
@@ -150,9 +154,8 @@ class MonosemanticityTrainer:
         with self.accelerator.accumulate(self.model):
             for batch in dataloader:
                 # Extract activations in the main process
-                texts = batch[self.train_config.text_column]
-                x = self.activation_extractor.extract_activations(texts)['activations']
-
+                # texts = batch[self.train_config.text_column]
+                x = self.activation_extractor.extract_activations(batch)['activations']
 
                 # Forward pass
                 x_hat, h = self.model(x)
@@ -192,8 +195,8 @@ class MonosemanticityTrainer:
         with torch.no_grad():
             for idx, batch in enumerate(dataloader):
                 # Extract activations in the main process
-                texts = batch[self.train_config.text_column]
-                x = self.activation_extractor.extract_activations(texts)['activations']
+                # texts = batch[self.train_config.text_column]
+                x = self.activation_extractor.extract_activations(batch)['activations']
 
                 # Forward pass
                 x_hat, h = self.model(x)
