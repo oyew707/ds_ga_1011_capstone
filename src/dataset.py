@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from datasets import load_dataset
 from peft import prepare_model_for_kbit_training
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, IterableDataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
@@ -154,6 +154,18 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         """
         pass
 
+    @abstractmethod
+    def get_activation_dim(self) -> int:
+        """
+        -------------------------------------------------------
+        Get the dimension of the final layer of the model before the LM head
+        -------------------------------------------------------
+        Returns:
+            dim - Final transformer layer output dimension(int)
+        -------------------------------------------------------
+        """
+        pass
+
     def decode_tokens(self, tokens: torch.Tensor) -> List[str]:
         """
         -------------------------------------------------------
@@ -227,6 +239,10 @@ class GPT2ActivationExtractor(BaseActivationExtractor):
     def _get_final_layer(self) -> torch.nn.Module:
         return self.model.transformer.ln_f
 
+    def get_activation_dim(self) -> int:
+        return self._get_final_layer().normalized_shape[0]
+
+
 
 class LlamaActivationExtractor(BaseActivationExtractor):
     """
@@ -247,6 +263,9 @@ class LlamaActivationExtractor(BaseActivationExtractor):
 
     def _get_final_layer(self) -> torch.nn.Module:
         return self.model.model.norm
+
+    def get_activation_dim(self) -> int:
+        return self._get_final_layer().weight.shape[0]
 
 
 class GemmaActivationExtractor(BaseActivationExtractor):
@@ -269,6 +288,9 @@ class GemmaActivationExtractor(BaseActivationExtractor):
     def _get_final_layer(self) -> torch.nn.Module:
         return self.model.model.norm
 
+    def get_activation_dim(self) -> int:
+        return self._get_final_layer().weight.shape[0]
+
 
 class TextDataset(torch.utils.data.Dataset):
     """
@@ -287,8 +309,10 @@ class TextDataset(torch.utils.data.Dataset):
             config: DataConfig,
     ):
         # Load dataset (English only and stream for big datasets)
-        self.dataset = load_dataset(config.dataset_name, name=config.dataset_config, split=config.split, streaming=True)
-        self.text_column = config.text_column
+        self.dataset = load_dataset(
+            config.dataset_name, name=config.dataset_config, 
+            split=config.split, streaming=True
+        ).select_columns([config.text_column])
         self.config = config
         self.tokenizer = tokenizer
 
@@ -305,8 +329,7 @@ class TextDataset(torch.utils.data.Dataset):
         -------------------------------------------------------
         """
         return DataLoader(
-            self.dataset[self.text_column],
+            self.dataset,
             batch_size=batch_size,
             num_workers=4,
-            shuffle=shuffle
         )

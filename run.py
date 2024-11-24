@@ -17,16 +17,14 @@ from src.parser import parse_args
 
 # Constants
 log = getlogger(__name__, 'info')
-SLURM_SCRIPT = """
-#!/bin/bash
+SLURM_SCRIPT = """#!/bin/bash
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
 #SBATCH --account=ds_ga_1011-2024fa
 #SBATCH --partition=n1s8-v100-1
 #SBATCH --time=8:00:00
-#SBATCH --mem=64GB
+#SBATCH --mem=24GB
 #SBATCH --gres=gpu:v100:1
 #SBATCH --job-name=job-{job_count}:1
 #SBATCH --mail-user=eo2233@nyu.edu
@@ -43,8 +41,11 @@ export SSL_CERT_DIR=/etc/ssl/certs
 export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # Copy project files
-scp -r greene-dtn:/home/eo2233/dsga1011_ep_{job_count}/ds_ga_1011_capstone/. dsga1011/ds_ga_1011_capstone/
-cd dsga1011/ds_ga_1011_capstone/
+# scp -r greene-dtn:/home/eo2233/dsga1011_ep_{job_count}/ds_ga_1011_capstone/. dsga1011/ds_ga_1011_capstone/
+# cd dsga1011/ds_ga_1011_capstone/
+
+# huggingface cli login
+huggingface-cli login --token $HUGGINGFACE_TOKEN --add-to-git-credential
 
 python main.py {args} -lm {model}'
 """

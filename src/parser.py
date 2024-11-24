@@ -50,7 +50,7 @@ def validate_args(args):
 
     # Validate data model
     data_model = args.data_model
-    assert data_model in {'wikitext'}, "Data model must be one of 'wikitext'"
+    assert data_model in {'wikitext', 'commoncrawl'}, "Data model must be one of 'wikitext'"
 
     # Validate Overcomplete size
     overcomplete_size = args.over_complete_size
@@ -125,7 +125,7 @@ def parse_args() -> argparse.Namespace:
         '-lce', '--l1-coefficient-end',
         type=float, default=1)
     parser.add_argument(
-        '-lcs', '--l1-coefficient-scheduler',
+        '-sch', '--l1-coefficient-scheduler',
         type=str, default='linear')
     parser.add_argument(
         '-we', '--warmup-epochs',

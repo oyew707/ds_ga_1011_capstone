@@ -70,8 +70,8 @@ def main():
     # Define data configuration and dataset
     data_config = DataConfig(
         batch_size=args.batch_size,
-        dataset_name=data_name_map[args.data_model],
-        dataset_config=data_path_map[args.data_model],
+        dataset_name=data_path_map[args.data_model],
+        dataset_config=data_name_map[args.data_model],
         model_name=model_name_map[args.llm_model],
         text_column="text",
         use_flash_attention=False
@@ -79,7 +79,7 @@ def main():
     extractor = extractor_map[args.llm_model](data_config)
 
     # Define autoencoder configuration and model
-    activation_dim = extractor._get_final_layer().normalized_shape[0]
+    activation_dim = extractor.get_activation_dim()
     log.info(f'Activation dimension: {activation_dim}')
     model_config = AutoencoderConfig(
         input_dim=activation_dim,
@@ -90,15 +90,17 @@ def main():
     if args.execution_mode == "train":
         # training data
         train_config = deepcopy(data_config)
-        train_config.split = "train[:90%]"
+        train_config.split = "train"
         dataset = TextDataset(extractor.tokenizer, train_config)
         dataloader = dataset.get_dataloader(batch_size=args.batch_size)
-        # validation data
-        validation_config = deepcopy(data_config)
-        validation_config.split = "train[90%:]"
-        validation_dataset = TextDataset(extractor.tokenizer, validation_config)
-        validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
-        log.info('Training the model')
+
+        # # validation data
+        # validation_config = deepcopy(data_config)
+        # validation_config.split = "train[90%:]"
+        # validation_dataset = TextDataset(extractor.tokenizer, validation_config)
+        # validation_dataloader = validation_dataset.get_dataloader(batch_size=args.batch_size)
+        # log.info('Training the model')
+
         # Define training configuration and optimizer
         trainer_config = TrainingConfig(
             batch_size=args.batch_size,
@@ -115,7 +117,7 @@ def main():
         trainer = MonosemanticityTrainer(model, optimizer=optimizer, extractor=extractor, train_config=trainer_config)
 
         # Train the model
-        results = trainer.train(dataloader, validation_dataloader)
+        results = trainer.train(dataloader)
         plot_training_metrics(results, args.run_path)
 
     elif args.execution_mode == "analyze":

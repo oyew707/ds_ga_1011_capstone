@@ -48,6 +48,7 @@ class TrainingConfig:
         l1_coefficient_end - Final Coefficient for L1 regularization on the hidden layer (float > l1_coefficient_start)
         warmup_epochs - Number of epochs for L1 regularization warmup (positive integer)
         schedule_type - Type of scheduling for L1 regularization ('cosine', 'linear') (str)
+        text_column - Column containing text data (str)
     -------------------------------------------------------
     """
     batch_size: int = 64
@@ -59,6 +60,7 @@ class TrainingConfig:
     l1_coefficient_end: float = 1
     warmup_epochs: int = 5  # Number of epochs for warmup
     schedule_type: str = 'cosine'  # Type of scheduling
+    text_column: str = "text"
 
 
 class MonosemanticityTrainer:
@@ -148,7 +150,7 @@ class MonosemanticityTrainer:
         with self.accelerator.accumulate(self.model):
             for batch in dataloader:
                 # Extract activations in the main process
-                texts = batch[0]
+                texts = batch[self.train_config.text_column]
                 x = self.activation_extractor.extract_activations(texts)['activations']
 
 
@@ -190,7 +192,7 @@ class MonosemanticityTrainer:
         with torch.no_grad():
             for idx, batch in enumerate(dataloader):
                 # Extract activations in the main process
-                texts = batch[0]
+                texts = batch[self.train_config.text_column]
                 x = self.activation_extractor.extract_activations(texts)['activations']
 
                 # Forward pass
