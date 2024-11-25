@@ -102,7 +102,7 @@ def parse_args() -> argparse.Namespace:
         type=str, default='wikitext')
     parser.add_argument(
         '-bs', '--batch-size',
-        type=int, default=64)
+        type=int, default=24)
     parser.add_argument(
         '-lr', '--learning-rate',
         type=float, default=1e-4)
@@ -114,7 +114,7 @@ def parse_args() -> argparse.Namespace:
         type=str, default='output')
     parser.add_argument(
         '-rs', '--random-seed',
-        type=int, default=1234)
+        type=int, default=4)
     parser.add_argument(
         '-ocs', '--over-complete-size',
         type=int, default=5)
@@ -139,5 +139,7 @@ def parse_args() -> argparse.Namespace:
     # Define run path
     run_path = os.path.join(args.output_path, args.run_name)
     setattr(args, 'run_path', run_path)
+
+    log.info(f'Parsed arguments: {args}')
 
     return args

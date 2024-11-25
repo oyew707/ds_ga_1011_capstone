@@ -12,6 +12,7 @@ __updated__ = "11/22/24"
 # Imports
 import sys
 import os
+import time
 from src.logger import getlogger
 from src.parser import parse_args
 
@@ -22,10 +23,10 @@ SLURM_SCRIPT = """#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --account=ds_ga_1011-2024fa
-#SBATCH --partition=n1s8-v100-1
-#SBATCH --time=8:00:00
-#SBATCH --mem=24GB
-#SBATCH --gres=gpu:v100:1
+#SBATCH --partition=c12m85-a100-1
+#SBATCH --time=60:00:00
+#SBATCH --mem=40GB
+#SBATCH --gres=gpu:a100:1
 #SBATCH --job-name=job-{job_count}:1
 #SBATCH --mail-user=eo2233@nyu.edu
 #SBATCH --mail-type=BEGIN,END
@@ -114,6 +115,11 @@ def main():
         # Submit job
         os.system(f'sbatch {script_path}')
         log.info(f"Submitted job for model: {model}")
+
+        # Wait 2 minutes before submitting next job
+        if job_count < len(models) - 1:
+            log.info(f"Waiting 2 minutes before submitting next job...")
+            time.sleep(120)
 
 
 if __name__ == '__main__':

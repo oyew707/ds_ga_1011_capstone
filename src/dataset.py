@@ -64,7 +64,7 @@ class DataConfig:
     dataset_name: str
     dataset_config: str
     model_name: str
-    max_length: int = 1024
+    max_length: int = 512
     batch_size: int = 32
     device: str = get_device()
     load_in_4bit: bool = True
@@ -91,7 +91,7 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         # Configure quantization
         self.quantization_config = BitsAndBytesConfig(
             load_in_4bit=config.load_in_4bit,
-            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_compute_dtype=torch.float8,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
         )
@@ -128,7 +128,7 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         """
         self.activations = F.relu(layer_outputs)
         if self.batch_norm is None:
-            self.batch_norm = torch.nn.BatchNorm1d(self.activations.size(1))
+            self.batch_norm = torch.nn.BatchNorm1d(self.activations.size(1)).to(self.config.device)
 
         # Use batch norm instead
         self.activations = self.batch_norm(self.activations)
@@ -313,6 +313,7 @@ class TextDataset(torch.utils.data.Dataset):
             config.dataset_name, name=config.dataset_config, 
             split=config.split, streaming=True
         ).select_columns([config.text_column])
+        self.dataset = self.dataset.shuffle(buffer_size=1000)
         self.config = config
         self.tokenizer = tokenizer
 
@@ -331,5 +332,5 @@ class TextDataset(torch.utils.data.Dataset):
         return DataLoader(
             self.dataset,
             batch_size=batch_size,
-            num_workers=4,
+            num_workers=2,
         )

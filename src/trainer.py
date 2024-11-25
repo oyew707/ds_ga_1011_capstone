@@ -8,22 +8,25 @@ __updated__ = "10/27/24"
 -------------------------------------------------------
 """
 
+
 # Imports
 from src import evaluation, logger, model
 from tqdm import tqdm
+from itertools import islice
 import os
+import math
 import torch
 from typing import Tuple, Dict, Optional
 from dataclasses import dataclass
 from collections import defaultdict
-from accelerate import Accelerator
+from accelerate import Accelerator, DataLoaderConfiguration
 from torch.utils.data import DataLoader
 from src.dataset import TextDataset, BaseActivationExtractor
 
 # Constants
 log = logger.getlogger(__name__, 'debug')
 torch.backends.mps.enabled = False
-
+NUM_BATCHES = 256
 
 def get_device() -> str:
     if torch.cuda.is_available():
@@ -32,6 +35,7 @@ def get_device() -> str:
         return "mps"
     else:
         return "cpu"
+
 
 @dataclass
 class TrainingConfig:
@@ -54,7 +58,7 @@ class TrainingConfig:
     batch_size: int = 64
     num_epochs: int = 10
     learning_rate: float = 1e-3
-    mixed_precision: str = 'fp16'
+    mixed_precision: str = 'fp8'
     run_path: str = 'runs/'
     l1_coefficient_start: float = 0.01
     l1_coefficient_end: float = 1
@@ -85,7 +89,8 @@ class MonosemanticityTrainer:
     ):
         # Input validation
         assert train_config.l1_coefficient_end >= train_config.l1_coefficient_start, "Max L1 coefficient must be >= initial coefficient"
-        assert train_config.schedule_type in ['cosine', 'linear', 'exponential'], "Schedule type must be 'cosine' or 'linear'"
+        assert train_config.schedule_type in ['cosine', 'linear',
+                                              'exponential'], "Schedule type must be 'cosine' or 'linear'"
         assert train_config.num_epochs > train_config.warmup_epochs > 0, "Warmup epochs must be > 0"
 
         self.train_config = train_config
@@ -96,12 +101,18 @@ class MonosemanticityTrainer:
 
         self.accelerator = Accelerator(
             mixed_precision=train_config.mixed_precision,
-            cpu = get_device() != 'cuda'
+            cpu=get_device() != 'cuda',
+            dataloader_config=DataLoaderConfiguration(dispatch_batches=False)
         )
         self.activation_extractor = extractor
 
         # Prepare model, optimizer for distributed training
         self.model, self.optimizer = self.accelerator.prepare(model, optimizer)
+
+        # Add memory optimization settings
+        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
     def _update_l1_coefficient(self, epoch: int) -> None:
         """
@@ -123,14 +134,15 @@ class MonosemanticityTrainer:
             self.l1_coefficient = self.train_config.l1_coefficient_start + progress * (diff)
             log.debug(f'Linear schedule; Update L1 coefficient: {self.l1_coefficient}')
         elif self.train_config.schedule_type == 'cosine':
-            self.l1_coefficient = self.train_config.l1_coefficient_start + 0.5 * diff * (1 - torch.cos(progress * torch.pi))
+            self.l1_coefficient = self.train_config.l1_coefficient_start + 0.5 * diff * (
+                        1 - math.cos(progress * torch.pi))
             log.debug(f'Cosine schedule; Update L1 coefficient: {self.l1_coefficient}')
         elif self.train_config.schedule_type == 'exponential':
-            self.l1_coefficient = self.train_config.l1_coefficient_start * (self.train_config.l1_coefficient_end / self.train_config.l1_coefficient_start) ** progress
+            self.l1_coefficient = self.train_config.l1_coefficient_start * (
+                        self.train_config.l1_coefficient_end / self.train_config.l1_coefficient_start) ** progress
             log.debug(f'Exponential schedule; Update L1 coefficient: {self.l1_coefficient}')
         else:
             raise NotImplementedError(f'Schedule type {self.train_config.schedule_type} not implemented')
-
 
     def train_epoch(self, dataloader: DataLoader) -> Dict[str, float]:
         """
@@ -148,15 +160,16 @@ class MonosemanticityTrainer:
         accumulated_losses = defaultdict(list)
 
         with self.accelerator.accumulate(self.model):
-            for batch in dataloader:
+            for batch in islice(dataloader, NUM_BATCHES):
                 # Extract activations in the main process
                 texts = batch[self.train_config.text_column]
                 x = self.activation_extractor.extract_activations(texts)['activations']
-
+                del texts, batch
 
                 # Forward pass
                 x_hat, h = self.model(x)
                 losses = evaluation.loss_function(x, x_hat, h, self.l1_coefficient)
+                del x_hat, x, h
 
                 # Update metrics
                 for k, v in losses.items():
@@ -168,6 +181,8 @@ class MonosemanticityTrainer:
 
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+
+                torch.cuda.empty_cache()
 
         # Average metrics
         epoch_metrics = {k: torch.cat(v).mean().item() for k, v in accumulated_losses.items()}
@@ -187,17 +202,18 @@ class MonosemanticityTrainer:
         """
         self.model.eval()
         total_metrics = defaultdict(list)
-        num_batches = len(dataloader)
 
         with torch.no_grad():
-            for idx, batch in enumerate(dataloader):
+            for idx, batch in enumerate(islice(dataloader, NUM_BATCHES)):
                 # Extract activations in the main process
                 texts = batch[self.train_config.text_column]
                 x = self.activation_extractor.extract_activations(texts)['activations']
+                del texts, batch
 
                 # Forward pass
                 x_hat, h = self.model(x)
                 losses = evaluation.loss_function(x, x_hat, h, self.train_config.l1_coefficient_end)
+                del x_hat, x, h
 
                 for k, v in losses.items():
                     total_metrics[k].append(v)
@@ -208,6 +224,8 @@ class MonosemanticityTrainer:
                               f"Reconstructed range: [{x_hat.min().item():.3f}, {x_hat.max().item():.3f}]")
                     log.debug(f"Input mean/std: {x.mean().item():.3f}/{x.std().item():.3f} "
                               f"Reconstructed mean/std: {x_hat.mean().item():.3f}/{x_hat.std().item():.3f}")
+
+                torch.cuda.empty_cache()
 
         eval_metrics = {k: torch.cat(v).mean().item() for k, v in total_metrics.items()}
         return eval_metrics
