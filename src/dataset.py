@@ -64,7 +64,7 @@ class DataConfig:
     dataset_name: str
     dataset_config: str
     model_name: str
-    max_length: int = 512
+    max_length: int = 256
     batch_size: int = 32
     device: str = get_device()
     load_in_4bit: bool = True
@@ -91,7 +91,7 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         # Configure quantization
         self.quantization_config = BitsAndBytesConfig(
             load_in_4bit=config.load_in_4bit,
-            bnb_4bit_compute_dtype=torch.float8,
+            bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
         )
@@ -332,5 +332,8 @@ class TextDataset(torch.utils.data.Dataset):
         return DataLoader(
             self.dataset,
             batch_size=batch_size,
-            num_workers=2,
+            num_workers=8,
+            pin_memory=True,
+            prefetch_factor=2,
+            persistent_workers=True
         )

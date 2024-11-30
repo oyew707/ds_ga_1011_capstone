@@ -26,7 +26,7 @@ from src.dataset import TextDataset, BaseActivationExtractor
 # Constants
 log = logger.getlogger(__name__, 'debug')
 torch.backends.mps.enabled = False
-NUM_BATCHES = 256
+NUM_BATCHES = 128
 
 def get_device() -> str:
     if torch.cuda.is_available():
@@ -102,12 +102,14 @@ class MonosemanticityTrainer:
         self.accelerator = Accelerator(
             mixed_precision=train_config.mixed_precision,
             cpu=get_device() != 'cuda',
-            dataloader_config=DataLoaderConfiguration(dispatch_batches=False)
+            dataloader_config=DataLoaderConfiguration(
+                split_batches=False,  # Each GPU gets full batch
+                dispatch_batches=False  # Same data order on both GPUs
+            )
         )
-        self.activation_extractor = extractor
 
-        # Prepare model, optimizer for distributed training
-        self.model, self.optimizer = self.accelerator.prepare(model, optimizer)
+        # Prepare model, optimizer and extractor for distributed training
+        self.model, self.optimizer, self.activation_extractor = self.accelerator.prepare(model, optimizer, extractor)
 
         # Add memory optimization settings
         torch.cuda.empty_cache()
@@ -160,7 +162,11 @@ class MonosemanticityTrainer:
         accumulated_losses = defaultdict(list)
 
         with self.accelerator.accumulate(self.model):
-            for batch in islice(dataloader, NUM_BATCHES):
+            for batch_idx, batch in enumerate(islice(dataloader, NUM_BATCHES)):
+                # Clear memory periodically
+                if batch_idx % 10 == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
                 # Extract activations in the main process
                 texts = batch[self.train_config.text_column]
                 x = self.activation_extractor.extract_activations(texts)['activations']
@@ -182,7 +188,7 @@ class MonosemanticityTrainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
         # Average metrics
         epoch_metrics = {k: torch.cat(v).mean().item() for k, v in accumulated_losses.items()}

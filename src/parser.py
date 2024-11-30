@@ -75,7 +75,7 @@ def validate_args(args):
                                                           int), "Warmup epochs must be a positive integer"
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(args_list=None) -> argparse.Namespace:
     """
     -------------------------------------------------------
     Defines Argument parser from command line arguments
@@ -132,7 +132,7 @@ def parse_args() -> argparse.Namespace:
         type=int, default=64)
 
     # Get parsed arguments
-    args = parser.parse_args()
+    args = parser.parse_args(args_list)
 
     validate_args(args)
 
