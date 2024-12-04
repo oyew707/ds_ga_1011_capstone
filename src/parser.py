@@ -46,7 +46,7 @@ def validate_args(args):
     # Validate execution mode
     execution_mode = args.execution_mode
     assert execution_mode in {'train', 'evaluate', 'analyze'}, "Execution mode must be 'train' or 'evaluate'"
-    assert execution_mode == 'train', "Only training mode is supported at this time"
+    assert execution_mode in {'train', 'analyze'}, "Only training mode is supported at this time"
 
     # Validate data model
     data_model = args.data_model

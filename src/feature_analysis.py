@@ -11,7 +11,7 @@ __updated__ = "11/21/24"
 
 # Imports
 import torch
-from typing import List, Tuple, Dict, Set, Any
+from typing import List, Tuple, Dict, Set, Any, Optional
 from collections import defaultdict, Counter
 import pickle
 import os
@@ -19,10 +19,19 @@ from src.logger import getlogger
 from src.model import SparseAutoencoder
 from src.dataset import BaseActivationExtractor
 from tqdm import tqdm
+from itertools import islice
 
 # Constants
 log = getlogger(__name__, 'info')
+NUM_BATCHES = 64
 
+def get_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
+    else:
+        return "cpu"
 
 class FeatureTracker:
     """
@@ -37,9 +46,10 @@ class FeatureTracker:
     -------------------------------------------------------
     """
 
-    def __init__(self, model: SparseAutoencoder, extractor: BaseActivationExtractor, save_dir: str, feature_activation_threshold: float = 0.5):
+    def __init__(self, model: SparseAutoencoder, extractor: BaseActivationExtractor, save_dir: str, feature_activation_threshold: Optional[float]= None):
         assert 0 <= feature_activation_threshold <= 1, "Feature threshold must be in [0, 1]"
-        self.model = model
+        self.device = torch.device(get_device())
+        self.model = model.to(self.device)
         self.extractor = extractor
         self.save_dir = save_dir
         self.feature_threshold = feature_activation_threshold
@@ -52,48 +62,57 @@ class FeatureTracker:
         # Dictionary mapping words to Counter objects of features
         self.word_features = defaultdict(Counter)
 
-    def process_prompt(self, prompt: str) -> Dict[Any, Set[str]]:
+    def process_prompt(self, prompts: List[str]) -> Dict[Any, Set[str]]:
         """
         -------------------------------------------------------
         Extracts feature-word associations from model outputs
         -------------------------------------------------------
         Parameters:
-            prompt - Input prompt for model inference (str)
+            prompts - Input prompt for model inference (str)
         Returns:
             Dictionary mapping feature indices to sets of associated words (Dict[str, Set[str]])
         -------------------------------------------------------
         """
         # Extract activations
         with torch.no_grad():
-            output_extraction = self.extractor.extract_activations([prompt])
+            output_extraction = self.extractor.extract_activations(prompts, top_k=1)
             activations = output_extraction['activations']
             tokens = output_extraction['top_tokens']
 
             # Get feature activations through autoencoder
             _, features = self.model(activations)
 
-        # Convert tokens to words
-        words = self.extractor.decode_tokens(tokens.squeeze())
-        log.debug(f"Generated Words: {words}")
-
-        # Transpose features to shape (sequence_length, n_features)
-        log.debug(f"Feature shape: {features.shape}")
-        features = features.squeeze().T  # Now each row corresponds to a word's feature activations
-
+        log.debug(f"Features shape: {features.shape}")
+    
         # Track associations for significantly active features
         new_associations = defaultdict(list)
-        # Iterate over each word
-        for word_idx, word_features in enumerate(features):
-            # Get features that are significantly active for this word
-            active_features = torch.where(word_features > self.feature_threshold)[0]
-            word = words[word_idx]
-
-            # Update counters for each active feature
-            for feature_idx in active_features:
-                feature_idx = feature_idx.item()
-                self.feature_words[feature_idx][word] += 1
-                self.word_features[word][feature_idx] += 1
-                new_associations[feature_idx].append(word)
+        
+        # Process each item in the batch
+        batch_size = features.size(0)
+        for batch_idx in range(batch_size):
+            # Get features for this batch item
+            batch_features = features[batch_idx].t()  # Shape: [sequence_length, hidden_dim]
+            
+            # Decode tokens for this batch
+            batch_tokens = tokens[batch_idx].tolist()
+            batch_words = self.extractor.decode_tokens(batch_tokens)
+            
+            # Make sure we only process up to the number of words we have
+            seq_length = min(batch_features.shape[0], len(batch_words))
+            
+            # Iterate over each word
+            for word_idx in range(seq_length):
+                word_features = batch_features[word_idx]
+                # Get features that are significantly active for this word
+                active_features = torch.where(word_features > self.feature_threshold)[0]
+                word = batch_words[word_idx]
+                
+                # Update counters for each active feature
+                for feature_idx in active_features:
+                    feature_idx = feature_idx.item()
+                    self.feature_words[feature_idx][word] += 1
+                    self.word_features[word][feature_idx] += 1
+                    new_associations[feature_idx].append(word)
 
         return dict(new_associations)
 
@@ -277,7 +296,7 @@ class FeatureTracker:
         for feature_idx, count in feature_counter.most_common(top_k):
             log.info(f"  Feature {feature_idx}: {count} times")
 
-    def analyze(self, dataloader: torch.utils.data.DataLoader):
+    def analyze(self, dataloader: torch.utils.data.DataLoader, text_column: str):
         """
         -------------------------------------------------------
         Analyze feature-word associations in a dataset
@@ -288,11 +307,11 @@ class FeatureTracker:
         """
         log.info("Starting feature analysis on dataset")
         with torch.no_grad():
-            for batch in tqdm(dataloader):
+            for batch in tqdm(islice(dataloader, NUM_BATCHES)):
                 # Convert batch items to list of texts
-                texts = batch[0]
+                # log.debug(f'{batch=}')
+                texts = batch[text_column]
+                self.process_prompt(texts)
 
-                for prompt in texts:
-                    self.process_prompt(prompt)
 
         log.info("Completed feature analysis on dataset")

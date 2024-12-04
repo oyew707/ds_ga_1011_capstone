@@ -127,11 +127,14 @@ class BaseActivationExtractor(ABC, torch.nn.Module):
         -------------------------------------------------------
         """
         self.activations = F.relu(layer_outputs)
-        if self.batch_norm is None:
-            self.batch_norm = torch.nn.BatchNorm1d(self.activations.size(1)).to(self.config.device)
+        # Get rid of normalization, since we we cannot keep track of it outside training
+        # if self.batch_norm is None:
+        #     self.batch_norm = torch.nn.BatchNorm1d(self.activations.size(1)).to(self.config.device)
 
-        # Use batch norm instead
-        self.activations = self.batch_norm(self.activations)
+        # # Use batch norm instead
+        # self.activations = self.batch_norm(self.activations)
+        # log.debug(f'Statistics after: {torch.min(self.activations)=}|{torch.max(self.activations)=}|{torch.mean(self.activations)=}')
+
 
     def _register_hooks(self):
         """
@@ -334,6 +337,6 @@ class TextDataset(torch.utils.data.Dataset):
             batch_size=batch_size,
             num_workers=8,
             pin_memory=True,
-            prefetch_factor=2,
+            prefetch_factor=1,
             persistent_workers=True
         )

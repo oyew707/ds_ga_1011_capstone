@@ -22,10 +22,10 @@ SLURM_SCRIPT = """#!/bin/bash
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --time=24:00:00
-#SBATCH --mem=64GB
-#SBATCH --gres=gpu:rtx8000:2
+#SBATCH --mem=96GB
+#SBATCH --gres=gpu:rtx8000:1
 #SBATCH --job-name=job-{job_count}:1
 #SBATCH --mail-user=eo2233@nyu.edu
 #SBATCH --mail-type=BEGIN,END
@@ -47,7 +47,7 @@ export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # huggingface cli login
 huggingface-cli login --token $HUGGINGFACE_TOKEN --add-to-git-credential
 
-accelerate launch --multi_gpu --num_processes=2 --mixed_precision=fp16 main.py {args} -lm {model}'
+accelerate launch --mixed_precision=fp16 main.py {args} -lm {model}'
 """
 
 def create_slurm_script(args: str, model: str, run_path: str, job_count: int) -> str:

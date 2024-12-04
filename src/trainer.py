@@ -26,7 +26,7 @@ from src.dataset import TextDataset, BaseActivationExtractor
 # Constants
 log = logger.getlogger(__name__, 'debug')
 torch.backends.mps.enabled = False
-NUM_BATCHES = 128
+NUM_BATCHES = 64
 
 def get_device() -> str:
     if torch.cuda.is_available():
