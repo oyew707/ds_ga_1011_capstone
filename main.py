@@ -138,7 +138,7 @@ def main():
         # Load state
         tracker.load_state("feature_analysis.pkl")
 
-        tracker.analyze(test_dataloader)
+        tracker.analyze(test_dataloader, test_config.text_column)
 
         # Get features that activate for many different words
         interesting_features = tracker.get_interesting_features(top_k=10)

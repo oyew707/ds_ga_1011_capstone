@@ -316,7 +316,7 @@ class TextDataset(torch.utils.data.Dataset):
             config.dataset_name, name=config.dataset_config, 
             split=config.split, # streaming=True
         ).select_columns([config.text_column])
-        self.dataset = self.dataset.shuffle(buffer_size=1000)
+        self.dataset = self.dataset.shuffle() # buffer_size=1000)
         self.config = config
         self.tokenizer = tokenizer
 
@@ -339,4 +339,23 @@ class TextDataset(torch.utils.data.Dataset):
             pin_memory=True,
             prefetch_factor=1,
             persistent_workers=True
+        )
+
+class ToyTextDataset(torch.utils.data.Dataset):
+    def __init__(self, text, text_column):
+        self.text = text
+        self.text_column = text_column
+
+    def __len__(self):
+        return len(self.text)
+
+    def __getitem__(self, idx):
+        data = self.text[idx]
+        sample = {self.text_column : data}
+        return sample
+    
+    def get_dataloader(self, batch_size: int):
+        return DataLoader(
+            self,
+            batch_size=batch_size,
         )

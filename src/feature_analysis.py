@@ -47,7 +47,7 @@ class FeatureTracker:
     """
 
     def __init__(self, model: SparseAutoencoder, extractor: BaseActivationExtractor, save_dir: str, feature_activation_threshold: Optional[float]= None):
-        assert 0 <= feature_activation_threshold <= 1, "Feature threshold must be in [0, 1]"
+        assert feature_activation_threshold is None or 0 <= feature_activation_threshold <= 1, "Feature threshold must be in [0, 1]"
         self.device = torch.device(get_device())
         self.model = model.to(self.device)
         self.extractor = extractor
@@ -82,10 +82,19 @@ class FeatureTracker:
             # Get feature activations through autoencoder
             _, features = self.model(activations)
 
-        log.debug(f"Features shape: {features.shape}")
+        log.debug(f"Features shape: {features.shape}; Feature norm stats: {features.norm(dim=1).mean():.4f}")
 
         if self.feature_threshold is None:
-            self.feature_threshold = torch.quantile(activations, 0.9)
+            sample_size = min(1000000, features.numel())
+            sampled_features = features.flatten()[torch.randperm(features.numel())[:sample_size]]
+            self.feature_threshold = torch.quantile(sampled_features, 0.75)
+            log.debug(f'{self.feature_threshold=} {torch.mean(sampled_features)=} {torch.min(sampled_features)=} {torch.max(sampled_features)=}')
+        
+        # # Skip if the quantile threshold equals the mean (indicates all values are the same)
+        # log.debug(f'{self.feature_threshold=} <= {features.mean()=}')
+        # if torch.all(torch.isclose(self.feature_threshold, features.mean(), atol=1e-4)):
+        #     log.warning("Skipping - there are no learned features")
+        #     return defaultdict(list)
     
         # Track associations for significantly active features
         new_associations = defaultdict(list)
@@ -95,6 +104,7 @@ class FeatureTracker:
         for batch_idx in range(batch_size):
             # Get features for this batch item
             batch_features = features[batch_idx].t()  # Shape: [sequence_length, hidden_dim]
+            log.debug(f"Feature activation stats: min={batch_features.min():.4f}, max={batch_features.max():.4f}, mean={batch_features.mean():.4f}")
             
             # Decode tokens for this batch
             batch_tokens = tokens[batch_idx].tolist()
@@ -108,6 +118,7 @@ class FeatureTracker:
                 word_features = batch_features[word_idx]
                 # Get features that are significantly active for this word
                 active_features = torch.where(word_features > self.feature_threshold)[0]
+                log.debug(f"{batch_words[word_idx]=} {active_features=} {word_features=}")
                 word = batch_words[word_idx]
                 
                 # Update counters for each active feature
