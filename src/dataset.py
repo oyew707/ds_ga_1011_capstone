@@ -314,7 +314,7 @@ class TextDataset(torch.utils.data.Dataset):
         # Load dataset (English only and stream for big datasets)
         self.dataset = load_dataset(
             config.dataset_name, name=config.dataset_config, 
-            split=config.split, streaming=True
+            split=config.split, # streaming=True
         ).select_columns([config.text_column])
         self.dataset = self.dataset.shuffle(buffer_size=1000)
         self.config = config
