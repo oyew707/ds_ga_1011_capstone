@@ -83,6 +83,9 @@ class FeatureTracker:
             _, features = self.model(activations)
 
         log.debug(f"Features shape: {features.shape}")
+
+        if self.feature_threshold is None:
+            self.feature_threshold = torch.quantile(activations, 0.9)
     
         # Track associations for significantly active features
         new_associations = defaultdict(list)
