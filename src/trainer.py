@@ -162,7 +162,8 @@ class MonosemanticityTrainer:
         accumulated_losses = defaultdict(list)
 
         with self.accelerator.accumulate(self.model):
-            for batch_idx, batch in enumerate(islice(dataloader, NUM_BATCHES)):
+            # for batch_idx, batch in enumerate(islice(dataloader, NUM_BATCHES)):
+            for batch_idx, batch in enumerate(dataloader):
                 # Clear memory periodically
                 if batch_idx % 10 == 0 and torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -210,7 +211,8 @@ class MonosemanticityTrainer:
         total_metrics = defaultdict(list)
 
         with torch.no_grad():
-            for idx, batch in enumerate(islice(dataloader, NUM_BATCHES)):
+            # for idx, batch in enumerate(islice(dataloader, NUM_BATCHES)):
+            for idx, batch in enumerate(dataloader):                
                 # Extract activations in the main process
                 texts = batch[self.train_config.text_column]
                 x = self.activation_extractor.extract_activations(texts)['activations']
