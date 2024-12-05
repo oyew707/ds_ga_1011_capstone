@@ -50,7 +50,7 @@ def validate_args(args):
 
     # Validate data model
     data_model = args.data_model
-    assert data_model in {'wikitext', 'commoncrawl'}, "Data model must be one of 'wikitext'"
+    assert data_model in {'wikitext'}, "Data model must be one of 'wikitext'"
 
     # Validate Overcomplete size
     overcomplete_size = args.over_complete_size
